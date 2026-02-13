@@ -3,9 +3,9 @@
 #SPDX-License-Identifier: MIT
 #*/
 
-include ../config.mk
+ROOT_DIR := $(realpath $(dir $(lastword $(MAKEFILE_LIST))))
 
-ROOT_DIR=$(realpath $(dir $(lastword $(MAKEFILE_LIST))))
+include ../config.mk
 VADD_WORK=$(ROOT_DIR)/vadd_work
 
 .PHONY: help

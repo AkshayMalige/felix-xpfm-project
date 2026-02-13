@@ -3,9 +3,9 @@
 #SPDX-License-Identifier:MIT
 #*/
 
-include ../config.mk
+ROOT_DIR := $(realpath $(dir $(lastword $(MAKEFILE_LIST))))
 
-ROOT_DIR=$(realpath $(dir $(lastword $(MAKEFILE_LIST))))
+include ../config.mk
 COMMON_IMAGE_VERSAL ?= $(LINUX_IMAGE_DIR)
 XSA_PATH ?= $(XSA_DIR)
 XSA_NAME ?= custom_hardware_platform
