@@ -223,4 +223,4 @@ vadd.cpp ──aarch64-g++──► simple_vadd                     │
 
 ## License
 
-Source files are under the MIT license (AMD/Xilinx copyright). The `config` helper script is under the X11 license.
+Source files are under the MIT license (AMD/Xilinx copyright). The helper scripts are under the X11 license.
