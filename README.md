@@ -23,7 +23,7 @@ After cloning, the only thing you may need to edit is:
 
 ```makefile
 # config.mk
-PETALINUX_PROJECT ?= my_foe_flx    # name you passed to build_versal_linux.sh -n
+PETALINUX_PROJECT ?= my_flx_lnx    # name you passed to build_versal_linux.sh -n
 ```
 
 Everything else (XSA path, platform path, sysroot, linux images) is derived from the project layout. If you keep the default directory structure and project name, it works out of the box.
@@ -75,10 +75,10 @@ Builds the Linux system: kernel Image, rootfs.ext4, boot firmware, and the cross
 
 ```bash
 cd step2_vp1552
-./build_versal_linux.sh -n my_foe_flx -x ../step1_vp1552/build/vivado/custom_hardware_platform_hw.xsa
+./build_versal_linux.sh -n my_flx_lnx -x ../step1_vp1552/build/vivado/custom_hardware_platform_hw.xsa
 ```
 
-Produces (inside `my_foe_flx/`):
+Produces (inside `my_flx_lnx/`):
 - `images/linux/Image` — Linux kernel
 - `images/linux/rootfs.ext4` — Root filesystem with XRT
 - `images/linux/sdk/sysroots/cortexa72-cortexa53-xilinx-linux/` — Cross-compilation sysroot
@@ -130,51 +130,51 @@ The `vadd` example exercises the full Versal data path: the **A72 PS** (running 
 │  │  simple_vadd (host app)                              │           │
 │  │  1. Allocates buffers in1[], in2[], out[] in DDR4    │           │
 │  │  2. Enqueues kernel via OpenCL / XRT                 │           │
-│  │  3. Reads back out[] and verifies: out[i]=in1[i]+in2[i]         │
+│  │  3. Reads back out[] and verifies                    │           │
 │  └──────────────┬───────────────────────────────────────┘           │
 │                 │ AXI-FPD (CIPS → cips_noc → PL)                    │
 ├─────────────────┼───────────────────────────────────────────────────┤
-│  NoC            │                                                    │
-│            ┌────▼────┐                                               │
-│            │ cips_noc │◄─── FPD-AXI, CCI, LPD paths                 │
-│            └────┬────┘                                               │
-│                 │ NMI (NoC Master Interface)                         │
-│            ┌────▼────┐                                               │
-│            │ noc_ddr4 │ config17, dual-rank DDR4-2666V, 72-bit       │
-│            └────┬────┘                                               │
+│  NoC            │                                                   │
+│            ┌────▼────┐                                              │
+│            │ cips_noc│◄─── FPD-AXI, CCI, LPD paths                  │
+│            └────┬────┘                                              │
+│                 │ NMI (NoC Master Interface)                        │
+│            ┌────▼────┐                                              │
+│            │ noc_ddr4│                                              │
+│            └────┬────┘                                              │
 ├─────────────────┼───────────────────────────────────────────────────┤
-│  DDR4           │                                                    │
-│       ┌─────────▼──────────┐                                         │
-│       │  in1[]  in2[]  out[]  (buffers in DDR4)                      │
-│       └─────────▲──────────┘                                         │
+│  DDR4           │                                                   │
+│       ┌─────────▼──────────┐                                        │
+│       │  in1[]  in2[]  out[]  (buffers in DDR4)                     │
+│       └─────────▲──────────┘                                        │
 │                 │ M_AXI gmem0 / gmem1 (PL → noc_ddr4 → DDR4)        │
 ├─────────────────┼───────────────────────────────────────────────────┤
-│  PL (krnl_vadd) │                                                    │
-│                 │                                                    │
-│    ┌────────────┴──────────────────────────────────────┐             │
-│    │          HLS dataflow pipeline (krnl_vadd)        │             │
-│    │                                                   │             │
-│    │          _____________                             │             │
-│    │         |             |<── in1[] via gmem0         │             │
-│    │         |  load_input |       __                   │             │
-│    │         |_____________|----->|  |                  │             │
-│    │          _____________       |  | in1_stream       │             │
-│    │  in2[] ─|             |      |__|                  │             │
-│    │  via  __|  load_input |        |                   │             │
-│    │  gmem1 |_____________|        |                   │             │
-│    │   __                          |                   │             │
-│    │  |  |<────────────────────────                    │             │
-│    │  |  | in2_stream                                  │             │
-│    │  |__|     _____________                           │             │
-│    │     └───>|             |                           │             │
-│    │          | compute_add |      __                   │             │
-│    │          |_____________|---->|  |                  │             │
-│    │           ______________     |  | out_stream       │             │
-│    │          |              |<---|__|                  │             │
-│    │          | store_result |                          │             │
-│    │          |______________|──> out[] via gmem0       │             │
-│    │                                                   │             │
-│    └───────────────────────────────────────────────────┘             │
+│  PL (krnl_vadd) │                                                   │
+│                 │                                                   │
+│    ┌────────────┴──────────────────────────────────────┐            │
+│    │          HLS dataflow pipeline (krnl_vadd)        │            │
+│    │                                                   │            │
+│    │          _____________                            │            │
+│    │         |             |<── in1[] via gmem0        │            │
+│    │         |  load_input |       __                  │            │
+│    │         |_____________|----->|  |                 │            │
+│    │          _____________       |  | in1_stream      │            │
+│    │  in2[] ─|             |      |__|                 │            │
+│    │  via  __|  load_input |        |                  │            │
+│    │  gmem1 |_____________|        |                   │            │
+│    │   __                          |                   │            │
+│    │  |  |<────────────────────────                    │            │
+│    │  |  | in2_stream                                  │            │
+│    │  |__|     _____________                           │            │
+│    │     └───>|             |                          │            │
+│    │          | compute_add |      __                  │            │
+│    │          |_____________|---->|  |                 │            │
+│    │           ______________     |  | out_stream      │            │
+│    │          |              |<---|__|                 │            │
+│    │          | store_result |                         │            │
+│    │          |______________|──> out[] via gmem0      │            │
+│    │                                                   │            │
+│    └───────────────────────────────────────────────────┘            │
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
