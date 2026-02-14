@@ -8,16 +8,16 @@ Custom Vitis extensible platform for the AMD/Xilinx **XCVP1552** (Versal Premium
 felix-xpfm-project/
 ├── config.mk               # ** Edit this file to configure all paths **
 ├── step1_vp1552/            # Vivado hardware design (XSA generation)
-├── versal_vp1552/           # PetaLinux build (Linux images + sysroot)
-├── step2_vp1552/            # Vitis platform creation (.xpfm)
-└── step3_vp1552/            # Vitis application build & emulation (vadd)
+├── step2_vp1552/            # PetaLinux build (Linux images + sysroot)
+├── step3_vp1552/            # Vitis platform creation (.xpfm)
+└── step4_vp1552/            # Vitis application build & emulation (vadd)
 ```
 
-Build order: **step1 → versal → step2 → step3**.
+Build order: **step1 → step2 → step3 → step4**.
 
 ## Quick Start — Path Configuration
 
-All paths are defined in **one file**: `config.mk` at the project root. Both `step2` and `step3` Makefiles include it automatically.
+All paths are defined in **one file**: `config.mk` at the project root. The `step3` and `step4` Makefiles include it automatically.
 
 After cloning, the only thing you may need to edit is:
 
@@ -63,7 +63,7 @@ make all
 
 ---
 
-## PetaLinux Build (`versal_vp1552/`)
+## Step 2 — PetaLinux Build (`step2_vp1552/`)
 
 Builds the Linux system: kernel Image, rootfs.ext4, boot firmware, and the cross-compilation sysroot.
 
@@ -73,7 +73,7 @@ Builds the Linux system: kernel Image, rootfs.ext4, boot firmware, and the cross
 | `config` | Kconfig-style helper script for manipulating PetaLinux `.config` files |
 
 ```bash
-cd versal_vp1552
+cd step2_vp1552
 ./build_versal_linux.sh -n my_foe_flx -x ../step1_vp1552/build/vivado/custom_hardware_platform_hw.xsa
 ```
 
@@ -87,7 +87,7 @@ Produces (inside `my_foe_flx/`):
 
 ---
 
-## Step 2 — Vitis Platform Creation (`step2_vp1552/`)
+## Step 3 — Vitis Platform Creation (`step3_vp1552/`)
 
 Combines the Vivado XSA + PetaLinux boot artifacts into a Vitis extensible platform (`.xpfm`).
 
@@ -98,14 +98,14 @@ Combines the Vivado XSA + PetaLinux boot artifacts into a Vitis extensible platf
 | `Makefile` | Includes `config.mk`, invokes `vitis -s platform_creation.py` |
 
 ```bash
-cd step2_vp1552
+cd step3_vp1552
 make all
 # Output: ws/custom_platform/export/custom_platform/custom_platform.xpfm
 ```
 
 ---
 
-## Step 3 — Application Build & Emulation (`step3_vp1552/`)
+## Step 4 — Application Build & Emulation (`step4_vp1552/`)
 
 Builds and runs the AMD `vadd` example on the custom platform in hardware emulation.
 
@@ -116,7 +116,7 @@ Builds and runs the AMD `vadd` example on the custom platform in hardware emulat
 | `run_vadd.sh` | Script executed inside QEMU — runs `simple_vadd` with hw_emu |
 
 ```bash
-cd step3_vp1552
+cd step4_vp1552
 make vadd_emu
 ```
 

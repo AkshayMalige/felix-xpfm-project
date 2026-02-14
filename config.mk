@@ -25,11 +25,11 @@ PLATFORM_NAME ?= custom_platform
 XSA_DIR := $(PROJECT_ROOT)/step1_vp1552/build/vivado
 XSA_NAME := custom_hardware_platform
 
-# PetaLinux output: Linux images directory
-LINUX_IMAGE_DIR := $(PROJECT_ROOT)/versal_vp1552/$(PETALINUX_PROJECT)/images/linux
+# Step 2 output: PetaLinux Linux images directory
+LINUX_IMAGE_DIR := $(PROJECT_ROOT)/step2_vp1552/$(PETALINUX_PROJECT)/images/linux
 
-# Step 2 output: Vitis platform (.xpfm)
-PLATFORM := $(PROJECT_ROOT)/step2_vp1552/ws/$(PLATFORM_NAME)/export/$(PLATFORM_NAME)/$(PLATFORM_NAME).xpfm
+# Step 3 output: Vitis platform (.xpfm)
+PLATFORM := $(PROJECT_ROOT)/step3_vp1552/ws/$(PLATFORM_NAME)/export/$(PLATFORM_NAME)/$(PLATFORM_NAME).xpfm
 
 # Sysroot for cross-compilation
 SYSROOT := $(LINUX_IMAGE_DIR)/sdk/sysroots/cortexa72-cortexa53-xilinx-linux
