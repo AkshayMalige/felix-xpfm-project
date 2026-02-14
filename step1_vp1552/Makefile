@@ -3,7 +3,10 @@
 #SPDX-License-Identifier: MIT
 #*/
 
-ROOT_DIR=$(realpath $(dir $(lastword $(MAKEFILE_LIST))))
+ROOT_DIR := $(realpath $(dir $(lastword $(MAKEFILE_LIST))))
+
+include ../config.mk
+
 ABS_BUILD_PATH=$(ROOT_DIR)/build
 ABS_HW_PATH=$(ABS_BUILD_PATH)/vivado
 BD_TCL=run.tcl
@@ -16,11 +19,11 @@ help:
 	@echo "make all 	## to generate hw platform and export XSA file"
 
 
-all: hw 
+all: hw
 sd_card :all
 #petalinuximage
 
-#generate the XSA file 
+#generate the XSA file
 hw:
 	mkdir -p $(ABS_HW_PATH)
 	cd $(ABS_HW_PATH); vivado -mode batch -notrace -source $(ABS_BD_TCL)
