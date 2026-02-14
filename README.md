@@ -50,8 +50,9 @@ Creates the extensible hardware platform and exports two XSA files (one for hard
 
 Key design choices in `run.tcl`:
 - Part: `xcvp1552-vsva3340-2MHP-e-S`
-- DDR4: 4 memory controllers, UDIMM DDR4-3200AA, 200 MHz input clock
-- PS peripherals: SD 3.0, GbE (RGMII), USB 3.0, UART, I2C x2, CAN
+- DDR4: config17, dual-rank UDIMM DDR4-2666V, 72-bit, 200 MHz ref clock (FLX-155 board pinout)
+- LPDDR4: removed (not present on FLX-155 board)
+- PS peripherals: SD 3.0, GbE (RGMII), USB 3.0, UART, I2C x2
 - PL: 1 platform clock (~100 MHz), 32 interrupts
 
 ```bash
@@ -111,9 +112,73 @@ Builds and runs the AMD `vadd` example on the custom platform in hardware emulat
 
 | File | Purpose |
 |------|---------|
-| `Makefile` | Includes `config.mk`, copies vadd sources from Vitis install, invokes the sub-make |
+| `Makefile` | Includes `config.mk`, sets up vadd_work from local `src/`, invokes the sub-make |
 | `makefile_vadd` | Inner Makefile with the full v++ compile/link/package/run flow |
 | `run_vadd.sh` | Script executed inside QEMU — runs `simple_vadd` with hw_emu |
+| `src/krnl_vadd.cpp` | HLS kernel — vector addition accelerator for PL |
+| `src/vadd.cpp` | Host application — OpenCL driver running on PS (A72) |
+| `src/vadd.h` | OpenCL header with aligned buffer allocator |
+
+### How vadd runs on the Felix CIPS-NoC-DDR4 platform
+
+The `vadd` example exercises the full Versal data path: the **A72 PS** (running Linux + XRT) sends commands through the **CIPS → NoC → PL** path, while the PL kernel reads/writes vectors through the **PL → NoC → DDR4** path.
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│  PS (Cortex-A72)                                                    │
+│  ┌──────────────────────────────────────────────────────┐           │
+│  │  simple_vadd (host app)                              │           │
+│  │  1. Allocates buffers in1[], in2[], out[] in DDR4    │           │
+│  │  2. Enqueues kernel via OpenCL / XRT                 │           │
+│  │  3. Reads back out[] and verifies: out[i]=in1[i]+in2[i]         │
+│  └──────────────┬───────────────────────────────────────┘           │
+│                 │ AXI-FPD (CIPS → cips_noc → PL)                    │
+├─────────────────┼───────────────────────────────────────────────────┤
+│  NoC            │                                                    │
+│            ┌────▼────┐                                               │
+│            │ cips_noc │◄─── FPD-AXI, CCI, LPD paths                 │
+│            └────┬────┘                                               │
+│                 │ NMI (NoC Master Interface)                         │
+│            ┌────▼────┐                                               │
+│            │ noc_ddr4 │ config17, dual-rank DDR4-2666V, 72-bit       │
+│            └────┬────┘                                               │
+├─────────────────┼───────────────────────────────────────────────────┤
+│  DDR4           │                                                    │
+│       ┌─────────▼──────────┐                                         │
+│       │  in1[]  in2[]  out[]  (buffers in DDR4)                      │
+│       └─────────▲──────────┘                                         │
+│                 │ M_AXI gmem0 / gmem1 (PL → noc_ddr4 → DDR4)        │
+├─────────────────┼───────────────────────────────────────────────────┤
+│  PL (krnl_vadd) │                                                    │
+│                 │                                                    │
+│    ┌────────────┴──────────────────────────────────────┐             │
+│    │          HLS dataflow pipeline (krnl_vadd)        │             │
+│    │                                                   │             │
+│    │          _____________                             │             │
+│    │         |             |<── in1[] via gmem0         │             │
+│    │         |  load_input |       __                   │             │
+│    │         |_____________|----->|  |                  │             │
+│    │          _____________       |  | in1_stream       │             │
+│    │  in2[] ─|             |      |__|                  │             │
+│    │  via  __|  load_input |        |                   │             │
+│    │  gmem1 |_____________|        |                   │             │
+│    │   __                          |                   │             │
+│    │  |  |<────────────────────────                    │             │
+│    │  |  | in2_stream                                  │             │
+│    │  |__|     _____________                           │             │
+│    │     └───>|             |                           │             │
+│    │          | compute_add |      __                   │             │
+│    │          |_____________|---->|  |                  │             │
+│    │           ______________     |  | out_stream       │             │
+│    │          |              |<---|__|                  │             │
+│    │          | store_result |                          │             │
+│    │          |______________|──> out[] via gmem0       │             │
+│    │                                                   │             │
+│    └───────────────────────────────────────────────────┘             │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+The kernel uses two AXI master ports (`gmem0`, `gmem1`) so `load_input` for in1 and in2 can read simultaneously. HLS `#pragma dataflow` pipelines all four stages — both loads, the add, and the store run concurrently through FIFO streams.
 
 ```bash
 cd step4_vp1552
