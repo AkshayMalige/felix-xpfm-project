@@ -53,7 +53,27 @@ Key design choices in `run.tcl`:
 - DDR4: config17, dual-rank UDIMM DDR4-2666V, 72-bit, 200 MHz ref clock (FLX-155 board pinout)
 - LPDDR4: removed (not present on FLX-155 board)
 - PS peripherals: SD 3.0, GbE (RGMII), USB 3.0, UART, I2C x2
-- PL: 1 platform clock (~100 MHz), 32 interrupts
+- PL: 3 platform clocks (see table below), 32 interrupts
+
+### Vitis Region Platform Clocks
+
+The platform exports three clocks to the Vitis region via `clk_wizard_0` (source: CIPS PMC PL0_REF_CLK at 100 MHz):
+
+| Clock Output | Clock ID | Frequency | Default | Reset Block |
+|---|---|---|---|---|
+| `clk_out1` | 0 | ~156 MHz | No | `proc_sys_reset_0` |
+| `clk_out2` | 2 | ~300 MHz | **Yes** | `proc_sys_reset_1` |
+| `clk_out3` | 3 | ~500 MHz | No | `proc_sys_reset_2` |
+
+By default, all Vitis kernels use the **default clock (id=2, ~300 MHz)**. To target a different clock during `v++ --link`:
+
+```bash
+# Use 500 MHz for all kernels:
+v++ -l --clock.defaultFreqHz 500000000 ...
+
+# Assign a specific kernel to a specific clock id:
+v++ -l --clock.id 3:krnl_vadd_1 ...
+```
 
 ```bash
 cd step1_vp1552
