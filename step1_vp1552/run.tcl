@@ -94,6 +94,40 @@ set_property -dict [list \
 set_property -dict [list CONFIG.FREQ_HZ {200000000}] [get_bd_intf_ports sys_clk0_0]
 
 
+# ------ Add multiple platform clocks for Vitis region ------
+# Configure clk_wizard_0 for 3 output clocks: 156 / 300 / 500 MHz
+startgroup
+set_property -dict [list \
+  CONFIG.CLKOUT_DRIVES {BUFG,BUFG,BUFG,BUFG,BUFG,BUFG,BUFG} \
+  CONFIG.CLKOUT_DYN_PS {None,None,None,None,None,None,None} \
+  CONFIG.CLKOUT_GROUPING {Auto,Auto,Auto,Auto,Auto,Auto,Auto} \
+  CONFIG.CLKOUT_MATCHED_ROUTING {false,false,false,false,false,false,false} \
+  CONFIG.CLKOUT_PORT {clk_out1,clk_out2,clk_out3,clk_out4,clk_out5,clk_out6,clk_out7} \
+  CONFIG.CLKOUT_REQUESTED_DUTY_CYCLE {50.000,50.000,50.000,50.000,50.000,50.000,50.000} \
+  CONFIG.CLKOUT_REQUESTED_OUT_FREQUENCY {156,300,500,100.000,100.000,100.000,100.000} \
+  CONFIG.CLKOUT_REQUESTED_PHASE {0.000,0.000,0.000,0.000,0.000,0.000,0.000} \
+  CONFIG.CLKOUT_USED {true,true,true,false,false,false,false} \
+] [get_bd_cells clk_wizard_0]
+endgroup
+
+# Clone proc_sys_reset_0 to create reset blocks for the new clocks
+copy_bd_objs /  [get_bd_cells {proc_sys_reset_0}]
+connect_bd_net [get_bd_pins clk_wizard_0/clk_out2] [get_bd_pins proc_sys_reset_1/slowest_sync_clk]
+copy_bd_objs /  [get_bd_cells {proc_sys_reset_1}]
+connect_bd_net [get_bd_pins clk_wizard_0/clk_out3] [get_bd_pins proc_sys_reset_2/slowest_sync_clk]
+
+# Let Vivado auto-wire the reset connections
+startgroup
+apply_bd_automation -rule xilinx.com:bd_rule:board -config { Manual_Source {Auto}}  [get_bd_pins proc_sys_reset_1/ext_reset_in]
+apply_bd_automation -rule xilinx.com:bd_rule:board -config { Manual_Source {Auto}}  [get_bd_pins proc_sys_reset_2/ext_reset_in]
+endgroup
+
+# Register all 3 clocks as platform clocks for Vitis
+#   clk_out1 (id=0, ~156 MHz) - original
+#   clk_out2 (id=2, ~300 MHz) - default kernel clock
+#   clk_out3 (id=3, ~500 MHz)
+set_property PFM.CLOCK {clk_out1 {id "0" is_default "false" proc_sys_reset "/proc_sys_reset_0" status "fixed"} clk_out2 {id "2" is_default "true" proc_sys_reset "/proc_sys_reset_1" status "fixed"} clk_out3 {id "3" is_default "false" proc_sys_reset "/proc_sys_reset_2" status "fixed"}} [get_bd_cells /clk_wizard_0]
+
 
 add_files -fileset constrs_1 -norecurse ../../pinout.xdc
 import_files -fileset constrs_1 ../../pinout.xdc
