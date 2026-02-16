@@ -54,6 +54,9 @@ MAIN_CFG="project-spec/configs/config"
 "$CFG_TOOL" --file "$ROOTFS_CFG" --keep-case --enable xrt-dev
 "$CFG_TOOL" --file "$ROOTFS_CFG" --keep-case --enable packagegroup-petalinux-openamp
 "$CFG_TOOL" --file "$ROOTFS_CFG" --keep-case --enable dnf
+"$CFG_TOOL" --file "$ROOTFS_CFG" --keep-case --enable opencl-clhpp-dev
+"$CFG_TOOL" --file "$ROOTFS_CFG" --keep-case --enable opencl-headers
+"$CFG_TOOL" --file "$ROOTFS_CFG" --keep-case --enable zocl
 
 # --- Boot & Image Settings ---
 "$CFG_TOOL" --file "$MAIN_CFG" --keep-case --disable CONFIG_SUBSYSTEM_ROOTFS_INITRAMFS
