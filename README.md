@@ -209,10 +209,10 @@ This runs the entire flow:
 
 ```
 krnl_vadd.cpp ──v++ -c──► krnl_vadd.xo ──v++ -l──► krnl_vadd.link.xsa
-                                                          │
-vadd.cpp ──aarch64-g++──► simple_vadd                     │
-                              │                           │
-                              ▼                           ▼
+                                                                 │
+vadd.cpp ──aarch64-g++──► simple_vadd                            │
+                              │                                  │
+                              ▼                                  ▼
                          v++ -p (package with rootfs, Image, xclbin)
                               │
                               ▼
