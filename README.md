@@ -10,7 +10,8 @@ felix-xpfm-project/
 ├── step1_vp1552/            # Vivado hardware design (XSA generation)
 ├── step2_vp1552/            # PetaLinux build (Linux images + sysroot)
 ├── step3_vp1552/            # Vitis platform creation (.xpfm)
-└── step4_vp1552/            # Vitis application build & emulation (vadd)
+├── step4_vp1552/            # Vitis application build & emulation (vadd)
+└── step5_vp1552/            # EF Tracking F110 StandAlone build
 ```
 
 Build order: **step1 → step2 → step3 → step4**.
