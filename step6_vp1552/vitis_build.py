@@ -71,6 +71,7 @@ class VitisKernel:
         kernel_name: str = "krnl_custom",
         target: str = "hw_emu",
         clock_hz: Optional[int] = None,
+        extra_sd_files: Optional[list] = None,
         extra_vpp_flags: Optional[list] = None,
         clean: bool = False,
     ) -> str:
@@ -88,6 +89,10 @@ class VitisKernel:
             target:          "hw_emu" or "hw"
             clock_hz:        HLS target clock frequency in Hz (e.g. 300_000_000 for 300 MHz).
                              If None, the platform default clock is used.
+            extra_sd_files:  List of host-side file paths to embed on the SD card FAT
+                             partition via --package.sd_file. Only used when target="hw".
+                             Files appear alongside the xclbin in the boot partition
+                             (typically /boot/ on a PetaLinux system).
             extra_vpp_flags: Additional flags passed to all v++ steps
             clean:           Remove previous build artifacts before building
 
@@ -136,6 +141,138 @@ class VitisKernel:
 
         # --- Step 2: Link .xo -> .xsa (system link / place & route) ---
         # NOTE: v++ 2024.2 requires the -l output to be .xsa, not .xclbin.
+        print(f"[2/3] v++ -l  ({target}) .xo -> .xsa ...")
+        link_cmd = [
+            "v++", "-l",
+            "-t", target,
+            "--platform", self.platform,
+            "--save-temps",
+            "-o", xsa_path,
+            xo_path,
+        ] + extra
+
+        self._run(link_cmd, log_path)
+        t_link = time.time() - t_start
+        print(f"       Link done ({t_link:.0f}s)")
+
+        # --- Step 3: Package .xsa -> .xclbin ---
+        print(f"[3/3] v++ -p  ({target}) .xsa -> .xclbin ...")
+        pkg_cmd = [
+            "v++", "-p",
+            "-t", target,
+            "--platform", self.platform,
+            "--save-temps",
+            "--package.out_dir", pkg_dir,
+            "-o", xclbin_path,
+            xsa_path,
+        ]
+        if self.rootfs:
+            pkg_cmd += ["--package.rootfs", self.rootfs]
+        if self.kernel_image:
+            pkg_cmd += ["--package.kernel_image", self.kernel_image]
+        if extra_sd_files and target == "hw":
+            for f in extra_sd_files:
+                pkg_cmd += ["--package.sd_file", os.path.abspath(f)]
+        pkg_cmd += extra
+
+        self._run(pkg_cmd, log_path)
+        t_total = time.time() - t_start
+
+        size_kb = os.path.getsize(xclbin_path) / 1024
+        print(f"Build complete in {t_total / 60:.1f} min")
+        print(f"  xclbin : {os.path.abspath(xclbin_path)} ({size_kb:.0f} KB)")
+        print(f"  log    : {os.path.abspath(log_path)}")
+        if extra_sd_files and target == "hw" and os.path.exists(pkg_dir):
+            sd_dir = os.path.join(pkg_dir, "sd_card")
+            report_dir = sd_dir if os.path.isdir(sd_dir) else pkg_dir
+            print(f"  sd_card: {os.path.abspath(report_dir)}/")
+            for entry in sorted(os.listdir(report_dir)):
+                print(f"           {entry}")
+
+        return os.path.abspath(xclbin_path)
+
+    def build_hls4ml(
+        self,
+        hls4ml_dir: str,
+        wrapper_src: str,
+        kernel_name: str = "nn_top",
+        target: str = "hw_emu",
+        extra_vpp_flags: Optional[list] = None,
+        clean: bool = False,
+    ) -> str:
+        """
+        Compile an hls4ml project + Vitis wrapper to .xclbin
+
+        Same three-step v++ flow as build() with two differences:
+          - wrapper_src is written to {build_dir}/{kernel_name}.cpp
+          - hls4ml_dir/firmware is added as an include path in the compile step
+          - all .cpp files in firmware/ are passed to v++ -c so that myproject()
+            and its dependencies are resolved during HLS synthesis
+
+        Args:
+            hls4ml_dir:      Path to hls4ml project directory (must contain firmware/)
+            wrapper_src:     Vitis top-level C++ (extern "C", m_axi pragmas, calls myproject())
+            kernel_name:     Top-level kernel function name
+            target:          "hw_emu" or "hw"
+            extra_vpp_flags: Additional flags passed to all v++ steps
+            clean:           Remove previous build artifacts before building
+
+        Returns:
+            Absolute path to the generated .xclbin
+        """
+        if target not in ("hw_emu", "hw"):
+            raise ValueError(f"target must be 'hw_emu' or 'hw', got '{target}'")
+
+        hls4ml_dir = os.path.abspath(hls4ml_dir)
+        firmware_dir = os.path.join(hls4ml_dir, "firmware")
+        if not os.path.isdir(firmware_dir):
+            raise FileNotFoundError(f"hls4ml firmware dir not found: {firmware_dir}")
+
+        build_dir = os.path.join(self.build_root, f"{kernel_name}_{target}")
+        if clean and os.path.exists(build_dir):
+            shutil.rmtree(build_dir)
+        os.makedirs(build_dir, exist_ok=True)
+
+        src_path    = os.path.join(build_dir, f"{kernel_name}.cpp")
+        xo_path     = os.path.join(build_dir, f"{kernel_name}.xo")
+        xsa_path    = os.path.join(build_dir, f"{kernel_name}.xsa")
+        xclbin_path = os.path.join(build_dir, f"{kernel_name}.xclbin")
+        pkg_dir     = os.path.join(build_dir, "package")
+        log_path    = os.path.join(build_dir, "build.log")
+
+        with open(src_path, "w") as f:
+            f.write(wrapper_src)
+
+        # Collect all firmware .cpp sources so myproject() is visible to HLS
+        firmware_srcs = sorted(
+            str(p) for p in Path(firmware_dir).glob("*.cpp")
+        )
+
+        extra = extra_vpp_flags or []
+        t_start = time.time()
+
+        # --- Step 1: Compile .cpp -> .xo (HLS synthesis, with hls4ml firmware) ---
+        # All firmware .cpp files are compiled alongside the wrapper so that
+        # myproject() and its dependencies are resolved during HLS synthesis.
+        # v++ -c always requires --platform (--part is not valid for this flow).
+        print(f"[1/3] v++ -c  ({target}) {kernel_name}.cpp -> .xo ...")
+        compile_cmd = [
+            "v++", "-c",
+            "-t", target,
+            "--platform", self.platform,
+            "-k", kernel_name,
+            "--save-temps",
+            "-o", xo_path,
+            "-I", firmware_dir,
+            src_path,
+        ] + firmware_srcs
+        compile_cmd += extra
+
+        self._run(compile_cmd, log_path)
+        t_compile = time.time() - t_start
+        print(f"       Compile done ({t_compile:.0f}s)")
+
+        # --- Step 2: Link .xo -> .xsa (system link / place & route) ---
         print(f"[2/3] v++ -l  ({target}) .xo -> .xsa ...")
         link_cmd = [
             "v++", "-l",

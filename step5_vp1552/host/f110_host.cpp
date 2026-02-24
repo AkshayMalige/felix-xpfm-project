@@ -40,6 +40,8 @@ static const std::string PIXEL_START_KERNEL_NAME = "configurableLengthWideLoader
 static const std::string PIXEL_END_KERNEL_NAME   = "EDMWriter:{PixelEDMWriter}";
 static const std::string STRIP_START_KERNEL_NAME = "configurableLengthWideLoader:{stripLoader}";
 static const std::string STRIP_END_KERNEL_NAME   = "EDMWriter:{StripEDMWriter}";
+static const std::string PIXEL_LUT_KERNEL_NAME   = "configurableLengthWideLoader:{LutPixelLoader}";
+static const std::string STRIP_LUT_KERNEL_NAME   = "configurableLengthWideLoader:{LutStripLoader}";
 
 // ======================================================================
 
@@ -135,26 +137,32 @@ static cl::Device get_xilinx_device()
 
 int main(int argc, char *argv[])
 {
-    if (argc < 4) {
+    if (argc < 6) {
         std::cerr << "Usage: " << argv[0]
-                  << " <xclbin> <pixel_input_txt> <strip_input_txt>\n";
+                  << " <xclbin> <pixel_input_txt> <strip_input_txt>"
+                  << " <pixel_lut_txt> <strip_lut_txt>\n";
         return 1;
     }
 
     const std::string xclbin_path       = argv[1];
     const std::string pixel_input_path  = argv[2];
     const std::string strip_input_path  = argv[3];
+    const std::string pixel_lut_path    = argv[4];
+    const std::string strip_lut_path    = argv[5];
 
     try {
         // ================== Read input files ==================
         std::vector<uint64_t> pixelInput = read_hex_file64(pixel_input_path);
         std::vector<uint64_t> stripInput = read_hex_file64(strip_input_path);
-
+        std::vector<uint64_t> pixelLut   = read_hex_file64(pixel_lut_path);
+        std::vector<uint64_t> stripLut   = read_hex_file64(strip_lut_path);
 
         std::cout<<"Reading done"<<std::endl;
 
         const cl_ulong pixelInputSize = static_cast<cl_ulong>(pixelInput.size());
         const cl_ulong stripInputSize = static_cast<cl_ulong>(stripInput.size());
+        const cl_ulong pixelLutSize   = static_cast<cl_ulong>(pixelLut.size());
+        const cl_ulong stripLutSize   = static_cast<cl_ulong>(stripLut.size());
 
         if (pixelInput.size() > PIXEL_CONTAINER_INPUT_BUF_SIZE) {
             throw std::runtime_error("Pixel input size exceeds PIXEL_CONTAINER_INPUT_BUF_SIZE");
@@ -210,6 +218,16 @@ int main(int argc, char *argv[])
         if (err != CL_SUCCESS) {
             throw std::runtime_error("Failed to create kernel: " + STRIP_END_KERNEL_NAME);
         }
+
+        cl::Kernel lutPixelKernel(program, PIXEL_LUT_KERNEL_NAME.c_str(), &err);
+        if (err != CL_SUCCESS) {
+            throw std::runtime_error("Failed to create kernel: " + PIXEL_LUT_KERNEL_NAME);
+        }
+
+        cl::Kernel lutStripKernel(program, STRIP_LUT_KERNEL_NAME.c_str(), &err);
+        if (err != CL_SUCCESS) {
+            throw std::runtime_error("Failed to create kernel: " + STRIP_LUT_KERNEL_NAME);
+        }
         std::cout<<"kernels done"<<std::endl;
 
         // ================== Create buffers ==================
@@ -245,6 +263,22 @@ int main(int argc, char *argv[])
             &err);
         if (err != CL_SUCCESS) throw std::runtime_error("Failed to create strip output buffer");
 
+        cl::Buffer pixelLutBuffer(
+            context,
+            CL_MEM_READ_ONLY,
+            pixelLut.size() * sizeof(uint64_t),
+            nullptr,
+            &err);
+        if (err != CL_SUCCESS) throw std::runtime_error("Failed to create pixel LUT buffer");
+
+        cl::Buffer stripLutBuffer(
+            context,
+            CL_MEM_READ_ONLY,
+            stripLut.size() * sizeof(uint64_t),
+            nullptr,
+            &err);
+        if (err != CL_SUCCESS) throw std::runtime_error("Failed to create strip LUT buffer");
+
         std::cout<<"buffers done"<<std::endl;
 
         // Host-side output containers (not written to disk)
@@ -278,11 +312,27 @@ int main(int argc, char *argv[])
         if (err != CL_SUCCESS) {
             throw std::runtime_error("Failed to set args for stripEndKernel");
         }
+
+        // LUT loaders: same kernel signature as the data loaders
+        // arg0 = LUT input buffer, arg2 = LUT size (arg1 is the output stream)
+        err  = lutPixelKernel.setArg(0, pixelLutBuffer);
+        err |= lutPixelKernel.setArg(2, pixelLutSize);
+        if (err != CL_SUCCESS) {
+            throw std::runtime_error("Failed to set args for lutPixelKernel");
+        }
+
+        err  = lutStripKernel.setArg(0, stripLutBuffer);
+        err |= lutStripKernel.setArg(2, stripLutSize);
+        if (err != CL_SUCCESS) {
+            throw std::runtime_error("Failed to set args for lutStripKernel");
+        }
         std::cout<<"args done"<<std::endl;
 
         // ================== Write input buffers ==================
         cl::Event evt_write_pixel_input;
         cl::Event evt_write_strip_input;
+        cl::Event evt_write_pixel_lut;
+        cl::Event evt_write_strip_lut;
 
         err = queue.enqueueWriteBuffer(
             pixelInputBuffer,
@@ -304,14 +354,47 @@ int main(int argc, char *argv[])
             &evt_write_strip_input);
         if (err != CL_SUCCESS) throw std::runtime_error("enqueueWriteBuffer stripInput failed");
 
+        err = queue.enqueueWriteBuffer(
+            pixelLutBuffer,
+            CL_FALSE,
+            0,
+            pixelLut.size() * sizeof(uint64_t),
+            pixelLut.data(),
+            nullptr,
+            &evt_write_pixel_lut);
+        if (err != CL_SUCCESS) throw std::runtime_error("enqueueWriteBuffer pixelLut failed");
+
+        err = queue.enqueueWriteBuffer(
+            stripLutBuffer,
+            CL_FALSE,
+            0,
+            stripLut.size() * sizeof(uint64_t),
+            stripLut.data(),
+            nullptr,
+            &evt_write_strip_lut);
+        if (err != CL_SUCCESS) throw std::runtime_error("enqueueWriteBuffer stripLut failed");
+
         std::vector<cl::Event> wait_pixel_input{evt_write_pixel_input};
         std::vector<cl::Event> wait_strip_input{evt_write_strip_input};
+        std::vector<cl::Event> wait_pixel_lut{evt_write_pixel_lut};
+        std::vector<cl::Event> wait_strip_lut{evt_write_strip_lut};
 
         // ================== Enqueue kernels ==================
         cl::Event evt_pixel_start;
         cl::Event evt_pixel_end;
         cl::Event evt_strip_start;
         cl::Event evt_strip_end;
+        cl::Event evt_lut_pixel;
+        cl::Event evt_lut_strip;
+
+        // LUT loaders must be running before cluster data reaches calculateClusterParameters /
+        // streaming_l2g_strip_tool, which sit several pipeline stages downstream from the
+        // data loaders. Launch them first, waiting only on their own DDR write.
+        err = queue.enqueueTask(lutPixelKernel, &wait_pixel_lut, &evt_lut_pixel);
+        if (err != CL_SUCCESS) throw std::runtime_error("enqueueTask lutPixelKernel failed");
+
+        err = queue.enqueueTask(lutStripKernel, &wait_strip_lut, &evt_lut_strip);
+        if (err != CL_SUCCESS) throw std::runtime_error("enqueueTask lutStripKernel failed");
 
         // Pixel start depends on pixel input write
         err = queue.enqueueTask(pixelStartKernel, &wait_pixel_input, &evt_pixel_start);
@@ -375,6 +458,10 @@ int main(int argc, char *argv[])
                                - evt_write_pixel_input.getProfilingInfo<CL_PROFILING_COMMAND_START>();
         auto strip_input_time  = evt_write_strip_input.getProfilingInfo<CL_PROFILING_COMMAND_END>()
                                - evt_write_strip_input.getProfilingInfo<CL_PROFILING_COMMAND_START>();
+        auto pixel_lut_time    = evt_lut_pixel.getProfilingInfo<CL_PROFILING_COMMAND_END>()
+                               - evt_lut_pixel.getProfilingInfo<CL_PROFILING_COMMAND_START>();
+        auto strip_lut_time    = evt_lut_strip.getProfilingInfo<CL_PROFILING_COMMAND_END>()
+                               - evt_lut_strip.getProfilingInfo<CL_PROFILING_COMMAND_START>();
         auto pixel_pipeline_time = evt_pixel_end.getProfilingInfo<CL_PROFILING_COMMAND_END>()
                                  - evt_pixel_start.getProfilingInfo<CL_PROFILING_COMMAND_START>();
         auto strip_pipeline_time = evt_strip_end.getProfilingInfo<CL_PROFILING_COMMAND_END>()
@@ -388,12 +475,14 @@ int main(int argc, char *argv[])
         std::cout << "Number of events: 1\n";
 
         std::cout << std::fixed << std::setprecision(3);
-        std::cout << "Pixel input ave time:  " << pixel_input_time  * inv_ms << " ms\n";
-        std::cout << "Strip input ave time:  " << strip_input_time  * inv_ms << " ms\n";
+        std::cout << "Pixel input ave time:    " << pixel_input_time    * inv_ms << " ms\n";
+        std::cout << "Strip input ave time:    " << strip_input_time    * inv_ms << " ms\n";
+        std::cout << "Pixel LUT loader time:   " << pixel_lut_time      * inv_ms << " ms\n";
+        std::cout << "Strip LUT loader time:   " << strip_lut_time      * inv_ms << " ms\n";
         std::cout << "Pixel pipeline ave time: " << pixel_pipeline_time * inv_ms << " ms\n";
         std::cout << "Strip pipeline ave time: " << strip_pipeline_time * inv_ms << " ms\n";
-        std::cout << "Pixel output ave time: " << pixel_output_time * inv_ms << " ms\n";
-        std::cout << "Strip output ave time: " << strip_output_time * inv_ms << " ms\n";
+        std::cout << "Pixel output ave time:   " << pixel_output_time   * inv_ms << " ms\n";
+        std::cout << "Strip output ave time:   " << strip_output_time   * inv_ms << " ms\n";
 
         // pixelOutput and stripOutput remain in CPU memory here; you can inspect them in a debugger
         // or later extend this code to dump them to files.
