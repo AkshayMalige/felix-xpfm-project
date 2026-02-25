@@ -74,14 +74,15 @@ class VitisKernel:
         extra_sd_files: Optional[list] = None,
         extra_vpp_flags: Optional[list] = None,
         clean: bool = False,
+        skip_package: bool = False,
     ) -> str:
         """
-        Compile HLS C++ source -> .xo -> .xsa -> .xclbin
+        Compile HLS C++ source -> .xo -> .xsa [-> .xclbin]
 
         Vitis 2024.2 three-step flow:
           1. v++ -c  : HLS synthesis        (.cpp -> .xo)
           2. v++ -l  : system link/P&R      (.xo  -> .xsa)   [output MUST be .xsa]
-          3. v++ -p  : package              (.xsa -> .xclbin)
+          3. v++ -p  : package              (.xsa -> .xclbin) [skipped if skip_package=True]
 
         Args:
             source:          HLS C++ source code as a string
@@ -95,9 +96,13 @@ class VitisKernel:
                              (typically /boot/ on a PetaLinux system).
             extra_vpp_flags: Additional flags passed to all v++ steps
             clean:           Remove previous build artifacts before building
+            skip_package:    When True, stop after link and return the .xsa path.
+                             Use vk.package() afterward to package multiple kernels
+                             together in a single v++ -p call.
 
         Returns:
-            Absolute path to the generated .xclbin
+            Absolute path to the .xsa  (when skip_package=True)
+            Absolute path to the .xclbin (when skip_package=False, default)
         """
         if target not in ("hw_emu", "hw"):
             raise ValueError(f"target must be 'hw_emu' or 'hw', got '{target}'")
@@ -119,6 +124,11 @@ class VitisKernel:
 
         extra = extra_vpp_flags or []
         t_start = time.time()
+        # Per-kernel temp dir keeps vadd/_x and vmult/_x separate — mirrors
+        # step4 Makefile's TEMP_DIR := ./_x.$(TARGET).  Without this, both
+        # kernels share the same _x/link/ directory and the second build picks
+        # up stale bitstream from the first (causing vmult to run vadd logic).
+        temp_dir = os.path.join(build_dir, "_x")
 
         # --- Step 1: Compile .cpp -> .xo (HLS synthesis) ---
         print(f"[1/3] v++ -c  ({target}) {kernel_name}.cpp -> .xo ...")
@@ -128,6 +138,7 @@ class VitisKernel:
             "--platform", self.platform,
             "-k", kernel_name,
             "--save-temps",
+            "--temp_dir", temp_dir,
             "-o", xo_path,
             src_path,
         ]
@@ -147,6 +158,7 @@ class VitisKernel:
             "-t", target,
             "--platform", self.platform,
             "--save-temps",
+            "--temp_dir", temp_dir,
             "-o", xsa_path,
             xo_path,
         ] + extra
@@ -155,7 +167,66 @@ class VitisKernel:
         t_link = time.time() - t_start
         print(f"       Link done ({t_link:.0f}s)")
 
+        if skip_package:
+            t_total = time.time() - t_start
+            print(f"Build (compile+link) complete in {t_total / 60:.1f} min")
+            print(f"  xsa : {os.path.abspath(xsa_path)}")
+            print(f"  log : {os.path.abspath(log_path)}")
+            return os.path.abspath(xsa_path)
+
         # --- Step 3: Package .xsa -> .xclbin ---
+        return self.package(
+            xsa_path=xsa_path,
+            kernel_name=kernel_name,
+            target=target,
+            extra_sd_files=extra_sd_files,
+            extra_vpp_flags=extra,
+            _log_path=log_path,
+            _t_start=t_start,
+        )
+
+    def package(
+        self,
+        xsa_path: str,
+        kernel_name: str,
+        target: str = "hw",
+        extra_sd_files: Optional[list] = None,
+        extra_vpp_flags: Optional[list] = None,
+        _log_path: Optional[str] = None,
+        _t_start: Optional[float] = None,
+    ) -> str:
+        """
+        Package a .xsa into a .xclbin with optional extra files on the SD card.
+
+        Use this after build(skip_package=True) to do one combined package step
+        for multiple kernels:
+
+            vadd_xsa  = vk.build(vadd_src,  "vadd",  target, skip_package=True)
+            vmult_xsa = vk.build(vmult_src, "vmult", target, skip_package=True)
+            # package vmult on its own to get the .xclbin
+            vmult_xclbin = vk.package(vmult_xsa, "vmult", target)
+            # package vadd with vmult.xclbin + host binary baked into sd_card
+            vadd_xclbin = vk.package(vadd_xsa, "vadd", target,
+                                     extra_sd_files=[vmult_xclbin, host_binary])
+
+        Args:
+            xsa_path:        Path to .xsa produced by v++ -l
+            kernel_name:     Kernel name (used for output file naming)
+            target:          "hw_emu" or "hw"
+            extra_sd_files:  Files to add via --package.sd_file (hw only)
+            extra_vpp_flags: Additional v++ flags
+
+        Returns:
+            Absolute path to the generated .xclbin
+        """
+        xsa_path = os.path.abspath(xsa_path)
+        build_dir = os.path.dirname(xsa_path)
+        pkg_dir   = os.path.join(build_dir, "package")
+        xclbin_path = os.path.join(build_dir, f"{kernel_name}.xclbin")
+        log_path  = _log_path or os.path.join(build_dir, "build.log")
+        t_start   = _t_start or time.time()
+        extra     = extra_vpp_flags or []
+
         print(f"[3/3] v++ -p  ({target}) .xsa -> .xclbin ...")
         pkg_cmd = [
             "v++", "-p",
@@ -170,9 +241,10 @@ class VitisKernel:
             pkg_cmd += ["--package.rootfs", self.rootfs]
         if self.kernel_image:
             pkg_cmd += ["--package.kernel_image", self.kernel_image]
-        if extra_sd_files and target == "hw":
+        if extra_sd_files:
             for f in extra_sd_files:
                 pkg_cmd += ["--package.sd_file", os.path.abspath(f)]
+                print(f"  + sd_file: {os.path.abspath(f)}")
         pkg_cmd += extra
 
         self._run(pkg_cmd, log_path)
@@ -180,14 +252,13 @@ class VitisKernel:
 
         size_kb = os.path.getsize(xclbin_path) / 1024
         print(f"Build complete in {t_total / 60:.1f} min")
-        print(f"  xclbin : {os.path.abspath(xclbin_path)} ({size_kb:.0f} KB)")
-        print(f"  log    : {os.path.abspath(log_path)}")
-        if extra_sd_files and target == "hw" and os.path.exists(pkg_dir):
-            sd_dir = os.path.join(pkg_dir, "sd_card")
-            report_dir = sd_dir if os.path.isdir(sd_dir) else pkg_dir
-            print(f"  sd_card: {os.path.abspath(report_dir)}/")
-            for entry in sorted(os.listdir(report_dir)):
-                print(f"           {entry}")
+        print(f"  xclbin  : {os.path.abspath(xclbin_path)} ({size_kb:.0f} KB)")
+        print(f"  log     : {os.path.abspath(log_path)}")
+        sd_dir = os.path.join(pkg_dir, "sd_card")
+        if os.path.isdir(sd_dir):
+            print(f"  sd_card : {os.path.abspath(sd_dir)}/")
+            for entry in sorted(os.listdir(sd_dir)):
+                print(f"            {entry}")
 
         return os.path.abspath(xclbin_path)
 
@@ -250,6 +321,7 @@ class VitisKernel:
 
         extra = extra_vpp_flags or []
         t_start = time.time()
+        temp_dir = os.path.join(build_dir, "_x")
 
         # --- Step 1: Compile .cpp -> .xo (HLS synthesis, with hls4ml firmware) ---
         # All firmware .cpp files are compiled alongside the wrapper so that
@@ -262,6 +334,7 @@ class VitisKernel:
             "--platform", self.platform,
             "-k", kernel_name,
             "--save-temps",
+            "--temp_dir", temp_dir,
             "-o", xo_path,
             "-I", firmware_dir,
             src_path,
@@ -279,6 +352,7 @@ class VitisKernel:
             "-t", target,
             "--platform", self.platform,
             "--save-temps",
+            "--temp_dir", temp_dir,
             "-o", xsa_path,
             xo_path,
         ] + extra
