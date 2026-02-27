@@ -324,9 +324,11 @@ class VitisKernel:
         temp_dir = os.path.join(build_dir, "_x")
 
         # --- Step 1: Compile .cpp -> .xo (HLS synthesis, with hls4ml firmware) ---
-        # All firmware .cpp files are compiled alongside the wrapper so that
-        # myproject() and its dependencies are resolved during HLS synthesis.
-        # v++ -c always requires --platform (--part is not valid for this flow).
+        # Only the wrapper (src_path) is passed to v++. myproject.cpp is pulled
+        # in via #include "myproject.cpp" inside the wrapper — single TU avoids
+        # the multiply-defined symbol error caused by parameters.h defining
+        # weight arrays (w2, b2, ...) without static linkage in both the wrapper
+        # and myproject.cpp when compiled as separate translation units.
         print(f"[1/3] v++ -c  ({target}) {kernel_name}.cpp -> .xo ...")
         compile_cmd = [
             "v++", "-c",
@@ -338,7 +340,7 @@ class VitisKernel:
             "-o", xo_path,
             "-I", firmware_dir,
             src_path,
-        ] + firmware_srcs
+        ]
         compile_cmd += extra
 
         self._run(compile_cmd, log_path)
