@@ -1,0 +1,42 @@
+F110_s Build — Kernels & Vitis HLS Project Paths
+==================================================
+Config used for linking : scripts/F110_s_Pipeline_make/u250_hw.cfg
+Linked by               : scripts/F110_s_Pipeline_make/Makefile (standard target, no MK= flag)
+Total xo files linked   : 12  (merge_kernel + split_kernel are MK-variant only, see note below)
+
+NOTE: Do NOT confuse with scripts/F100_s_Pipeline_make/u250_hw.cfg — that is a
+      different, older pipeline (parapix_clustering, widener, unloader) with only 10 kernels.
+
++---------------------------------------+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| Kernel (.xo)                          | Vitis HLS Project (hls.app path)                                                                                                                                                                 |
++---------------------------------------+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| [1] STREAMING PIXEL CLUSTERING                                                                                                                                                                                                                     |
++---------------------------------------+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| F110_kernel                           | step5_vp1552/xilinx/Clustering/Cpp_kernels/streaming_pixel_clustering/all_builds/hw/F110_kernel.hw/streaming_pixel_clustering_tool/streaming_pixel_clustering_tool/hls.app |
+| CALCULATE_F110_kernel                 | step5_vp1552/xilinx/Clustering/Cpp_kernels/streaming_pixel_clustering/all_builds/hw/CALCULATE_F110_kernel.hw/calculateClusterParameters/calculateClusterParameters/hls.app |
++---------------------------------------+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| [2] STRIP CLUSTERING STREAMING  (built via CMake -> build_xilinx/Targets/)                                                                                                                                                                        |
++---------------------------------------+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| processHitsStreaming                  | /home/synthara/VersalPrjs/felix/build_xilinx/Targets/processHitsStreaming_temp/processHitsStreaming/processHitsStreaming/processHitsStreaming/hls.app                                             |
+| configurableLengthWideLoader          | /home/synthara/VersalPrjs/felix/build_xilinx/Targets/configurableLengthWideLoader_temp/configurableLengthWideLoader/configurableLengthWideLoader/configurableLengthWideLoader/hls.app            |
+| narrower                              | /home/synthara/VersalPrjs/felix/build_xilinx/Targets/narrower_temp/narrower/narrower/narrower/hls.app                                                                                           |
++---------------------------------------+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| [3] L2G STRIP                                                                                                                                                                                                                                      |
++---------------------------------------+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| stream_kernel                         | step5_vp1552/xilinx/Clustering/Cpp_kernels/l2g_strip/all_builds/hw/stream_kernel.hw/streaming_l2g_strip_tool/streaming_l2g_strip_tool/hls.app |
+| calc_kernel                           | step5_vp1552/xilinx/Clustering/Cpp_kernels/l2g_strip/all_builds/hw/calc_kernel.hw/calculateStripClusterParameters/calculateStripClusterParameters/hls.app |
++---------------------------------------+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| [4] EDM PREP / PASS-THROUGH                                                                                                                                                                                                                        |
++---------------------------------------+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| streamingPixelEDMPrepKernel           | step5_vp1552/xilinx/Pass_Through/EDMPrep/build/_hw/streamingPixelEDMPrepKernel.hw/streamingPixelEDMPrep/streamingPixelEDMPrep/hls.app        |
+| streamingStripEDMPrepKernel           | step5_vp1552/xilinx/Pass_Through/EDMPrep/build/_hw/streamingStripEDMPrepKernel.hw/streamingStripEDMPrep/streamingStripEDMPrep/hls.app        |
+| PixelEDMDecoder                       | step5_vp1552/xilinx/Pass_Through/EDMPrep/build/_hw/PixelEDMDecoder.hw/PixelEDMDecoder/PixelEDMDecoder/hls.app                               |
+| StripEDMDecoder                       | step5_vp1552/xilinx/Pass_Through/EDMPrep/build/_hw/StripEDMDecoder.hw/StripEDMDecoder/StripEDMDecoder/hls.app                               |
+| EDMWriter                             | step5_vp1552/xilinx/Pass_Through/EDMPrep/build/_hw/EDMWriter.hw/EDMWriter/EDMWriter/hls.app                                                  |
++---------------------------------------+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+
+MK-VARIANT ONLY (merge_kernel + split_kernel added when building with MK=3-3, 4-1, 4-2, 5-2, or 8-1)
++---------------------------------------+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| merge_kernel                          | step5_vp1552/xilinx/Clustering/Cpp_kernels/streaming_pixel_clustering/all_builds/hw/merge_kernel.hw/mergeStreams/mergeStreams/hls.app         |
+| split_kernel                          | step5_vp1552/xilinx/Clustering/Cpp_kernels/streaming_pixel_clustering/all_builds/hw/split_kernel.hw/splitStreams/splitStreams/hls.app         |
++---------------------------------------+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
